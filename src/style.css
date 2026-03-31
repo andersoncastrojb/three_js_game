@@ -1,0 +1,111 @@
+/* ──────────────────────────────────────────────────────────────
+   Global Reset & Base
+   ────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Share+Tech+Mono&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --clr-bg:       #0d0d1a;
+  --clr-surface:  rgba(10, 12, 28, 0.85);
+  --clr-primary:  #00ddff;
+  --clr-accent:   #ff6633;
+  --clr-text:     #c8e0f0;
+  --clr-muted:    #4a6080;
+  --font-ui:      'Outfit', sans-serif;
+  --font-mono:    'Share Tech Mono', monospace;
+  --radius:       6px;
+  --hud-gap:      10px;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Canvas
+   ────────────────────────────────────────────────────────────── */
+#app-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   HUD Overlay
+   ────────────────────────────────────────────────────────────── */
+#hud {
+  position: fixed;
+  top: var(--hud-gap);
+  left: var(--hud-gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hud-gap);
+  pointer-events: none;
+  z-index: 100;
+}
+
+.hud-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px;
+  background: var(--clr-surface);
+  border: 1px solid rgba(0, 221, 255, 0.18);
+  border-radius: var(--radius);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  min-width: 140px;
+  animation: hud-in 0.4s ease both;
+}
+
+@keyframes hud-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.hud-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--clr-primary);
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.hud-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--clr-text);
+  margin-top: 2px;
+}
+
+.hud-skill {
+  border-color: rgba(255, 102, 51, 0.35);
+  animation: skill-pulse 0.3s ease both;
+}
+
+@keyframes skill-pulse {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Corner badge
+   ────────────────────────────────────────────────────────────── */
+body::after {
+  content: 'CLEAN ARCH · THREE.JS · VITE';
+  position: fixed;
+  bottom: 14px;
+  right: 16px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--clr-muted);
+  pointer-events: none;
+}
