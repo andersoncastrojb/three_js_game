@@ -1,9 +1,10 @@
 // Vite Specific: Importing markdown content directly as raw strings.
 // Note: Depending on your Vite config setup, you might need to alias these 
 // or ensure they are properly bundled if loaded dynamically.
-import npcSightSkill from '../../../../skills/npc-assistant.md?raw';
-import gameLore from '../../../../knowledge/game-lore.md?raw';
-import entitiesInfo from '../../../../knowledge/entities.md?raw';
+import npcSightSkill from '../../../skills/npc-assistant.md?raw';
+import zombieSkill from '../../../skills/zombie-behavior.md?raw';
+import gameLore from '../../../knowledge/game-lore.md?raw';
+import entitiesInfo from '../../../knowledge/entities.md?raw';
 
 /**
  * Loads skills/*.md and knowledge/*.md content for RAG injection.
@@ -20,7 +21,10 @@ export class ContextLoader {
         if (skillName === 'npc-assistant') {
             return npcSightSkill;
         }
-        return "You are a helpful NPC in Aethelgard.";
+        if (skillName === 'zombie-behavior') {
+            return zombieSkill;
+        }
+        return "You are an AI character.";
     }
 
     /**

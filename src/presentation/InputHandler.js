@@ -53,9 +53,9 @@ export class InputHandler {
   };
 
   /** Check if a key is currently held. */
-  isPressed(code) {
+  isPressed = (code) => {
     return this.#keys.has(code);
-  }
+  };
 
   dispose() {
     window.removeEventListener('keydown', this.#onKeyDown);

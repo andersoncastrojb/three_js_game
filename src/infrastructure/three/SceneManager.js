@@ -21,8 +21,8 @@ export class SceneManager {
   constructor(canvas) {
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0d0d1a);
-    this.scene.fog = new THREE.FogExp2(0x0d0d1a, 0.035);
+    this.scene.background = new THREE.Color(0xeebbaa);
+    this.scene.fog = new THREE.FogExp2(0xeebbaa, 0.025);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(

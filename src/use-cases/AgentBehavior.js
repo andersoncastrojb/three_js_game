@@ -8,15 +8,10 @@
 
 import { GameEntity } from '../core/entities/GameEntity.js';
 import { Vector3Utils } from '../core/math/Vector3Utils.js';
-import { eventBus } from '../core/EventBus.js';
+import { eventBus, AgentEvents } from '../core/EventBus.js';
 
-export const AgentEvents = {
-  SPAWNED:   'agent:spawned',
-  MOVED:     'agent:moved',
-  ACTIVATED: 'agent:activated',
-  DISMISSED: 'agent:dismissed',
-  SKILL_RESULT: 'agent:skillResult',
-};
+// Re-export so existing consumers (main.js etc.) keep working without changes.
+export { AgentEvents };
 
 export class AgentBehavior {
   /** @type {Map<string, GameEntity>} */
