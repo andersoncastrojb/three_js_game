@@ -13,7 +13,7 @@
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
-import { eventBus, PlayerEvents, LevelEvents } from '../core/EventBus.js';
+import { eventBus, PlayerEvents, LevelEvents, ZombieEvents } from '../core/EventBus.js';
 
 // ─────────────────────────────────────────────────────────────
 // Type Definitions
@@ -39,6 +39,7 @@ const KEYS = Object.freeze({
   FIRE:     ['Mouse0'],        // handled separately via mouse-button state
   RELOAD:   ['KeyR'],
   JUMP:     ['Space'],         // future use (reserved)
+  SCAN:     ['KeyV'],
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -80,14 +81,48 @@ export class PlayerController {
 
     /** @private Track previous health. */
     this._prevHealth = player.health;
+    
+    /** @private Track previous V key state */
+    this._prevV = false;
 
     /** @private @type {number[][]} logic grid for collisions */
     this._grid = null;
     /** @private @type {number} */
     this._cellSize = 4; // match MazeRenderer default
+    /** @private @type {Object} */
+    this._exitCoord = null;
+    /** @private @type {Object} */
+    this._entranceCoord = null;
+
+    /** @private @type {number} Last time fired (ms) */
+    this._lastFireTime = 0;
+    /** @private @type {number} Fire rate delay (ms) */
+    this._fireRateDelay = 200; // 5 shots per second
 
     this._bus.on(LevelEvents.GENERATED, (payload) => {
       this._grid = payload.grid;
+      this._exitCoord = payload.exit;
+      this._entranceCoord = payload.entrance;
+      
+      // Full reset of player state
+      this._player.health = this._player.maxHealth;
+      this._player.ammo = this._player.maxAmmo;
+      this._player.lives = 3; // Reset to 3 lives on level restart
+      this._player.scans = this._player.maxScans;
+      this._player.isReloading = false;
+      this._player.isScanning = false;
+
+      const sx = this._entranceCoord.col * this._cellSize + (this._cellSize / 2);
+      const sz = this._entranceCoord.row * this._cellSize + (this._cellSize / 2);
+      this._player.setPosition(sx, 0, sz);
+      
+      this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot());
+      this._bus.emit(PlayerEvents.SCAN_CHANGED, this._player.toSnapshot());
+      this._bus.emit(PlayerEvents.SPAWNED, this._player.toSnapshot());
+    });
+
+    this._bus.on(ZombieEvents.ATTACK, (payload) => {
+      this.applyDamage(payload.damage);
     });
 
     // Emit spawn event once
@@ -105,9 +140,17 @@ export class PlayerController {
   update(delta) {
     if (!this._player.isAlive) return;
 
+    this._processScanToggle();
+
+    if (this._player.isScanning) {
+      // Freeze movement and combat while in radar mode
+      return; 
+    }
+
     this._processMovement(delta);
     this._processFire();
     this._processReload();
+    this._checkExit();
     this._dispatchChangeEvents();
   }
 
@@ -122,6 +165,7 @@ export class PlayerController {
    * @param {number} dy - Vertical pixel delta.
    */
   applyMouseLook(dx, dy) {
+    if (this._player.isScanning) return; // Lock rotation in radar mode
     this._player.applyMouseLook(dx, dy);
     this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot());
   }
@@ -148,9 +192,55 @@ export class PlayerController {
     }
   }
 
+  /** Force cancel scan mode (e.g. on pause/ESC). */
+  cancelScan() {
+    if (this._player.isScanning) {
+       this._player.isScanning = false;
+       this._bus.emit(PlayerEvents.SCAN_CHANGED, this._player.toSnapshot());
+       this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot());
+    }
+  }
+
   // ───────────────────────────────────────────────────────────
   // Private
   // ───────────────────────────────────────────────────────────
+
+  /** @private */
+  _processScanToggle() {
+    const fn = (codes) => codes.some((c) => this._input.isPressed(c));
+    const vPressed = fn(KEYS.SCAN);
+    
+    if (vPressed && !this._prevV) {
+      if (this._player.isScanning) {
+        this._player.isScanning = false;
+        this._bus.emit(PlayerEvents.SCAN_CHANGED, this._player.toSnapshot());
+        this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot()); // Force cam sync
+      } else if (this._player.scans > 0) {
+        this._player.scans--;
+        this._player.isScanning = true;
+        this._bus.emit(PlayerEvents.SCAN_CHANGED, this._player.toSnapshot());
+        this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot()); // Force cam sync
+      }
+    }
+    this._prevV = vPressed;
+  }
+
+  /**
+   * Check if player reached the exit cell.
+   * @private
+   */
+  _checkExit() {
+    if (!this._exitCoord) return;
+    
+    const pCol = Math.floor(this._player.position.x / this._cellSize);
+    const pRow = Math.floor(this._player.position.z / this._cellSize);
+
+    if (pCol === this._exitCoord.col && pRow === this._exitCoord.row) {
+      this._bus.emit(LevelEvents.CHANGED, { levelIndex: 1 /* placeholder for next level */ });
+      // Reset exit to avoid spamming
+      this._exitCoord = null;
+    }
+  }
 
   /**
    * Compute WASD movement direction (in yaw-rotated player-space) and move.
@@ -231,14 +321,48 @@ export class PlayerController {
   /** @private */
   _processFire() {
     if (this._mouseFireHeld) {
-      this._combat.fire();
+      const now = Date.now();
+      if (now - this._lastFireTime >= this._fireRateDelay) {
+        if (this._player.consumeAmmo()) {
+          this._lastFireTime = now;
+          
+          // Calculate firing direction from player yaw/pitch
+          const yaw = this._player.yaw;
+          const pitch = this._player.pitch;
+          
+          // Three.js forward is -Z. 
+          const direction = {
+            x: -Math.sin(yaw) * Math.cos(pitch),
+            y: Math.sin(pitch),
+            z: -Math.cos(yaw) * Math.cos(pitch)
+          };
+
+          this._bus.emit(PlayerEvents.FIRED, {
+            origin: { 
+              x: this._player.position.x, 
+              y: 1.6, // Eye height
+              z: this._player.position.z 
+            },
+            direction,
+            damage: 25,
+            speed: 50
+          });
+        }
+      }
     }
   }
 
   /** @private */
   _processReload() {
     if (this._input.isPressed('KeyR')) {
-      this._combat.reload();
+      if (this._player.startReload()) {
+        this._bus.emit(PlayerEvents.RELOAD_START, this._player.toSnapshot());
+        setTimeout(() => {
+          this._player.finishReload();
+          this._bus.emit(PlayerEvents.RELOAD_FINISH, this._player.toSnapshot());
+          this._dispatchChangeEvents();
+        }, 1500);
+      }
     }
   }
 
@@ -262,6 +386,17 @@ export class PlayerController {
     const respawned = this._player.respawn();
     if (respawned) {
       console.info('[PlayerController] Player respawned. Lives remaining:', this._player.lives);
+      
+      // Reset position to entrance
+      if (this._entranceCoord) {
+         const sx = this._entranceCoord.col * this._cellSize + (this._cellSize / 2);
+         const sz = this._entranceCoord.row * this._cellSize + (this._cellSize / 2);
+         this._player.setPosition(sx, 0, sz);
+      } else {
+         this._player.setPosition(this._cellSize / 2, 0, this._cellSize / 2);
+      }
+      
+      this._bus.emit(PlayerEvents.MOVED, this._player.toSnapshot());
       this._bus.emit(PlayerEvents.SPAWNED, this._player.toSnapshot());
     } else {
       console.warn('[PlayerController] Game Over — no lives remaining.');

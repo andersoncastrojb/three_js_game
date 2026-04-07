@@ -1,245 +1,182 @@
 /**
  * @file CombatSystem.js
  * @layer Use Cases
- * @description Handles all combat interactions: shooting, hit detection,
- * damage application, and reload timing.
- *
- * ## Raycast Strategy (pure JS)
- * Three.js Raycaster is INFRASTRUCTURE and must not be used here.
- * Instead, we accept pre-computed hit results (from the infrastructure
- * `ProjectileRaycaster`) delivered via EventBus, then apply domain logic.
- *
- * The combat loop works like this:
- *  1. Player fires → `CombatSystem.fire()` checks ammo, emits `combat:fired`.
- *  2. Infrastructure `ProjectileRaycaster` catches `combat:fired`, runs
- *     Three.js ray → scene intersection, emits `combat:rayResult`.
- *  3. `CombatSystem` catches `combat:rayResult`, calls `applyHit()`.
- *  4. `applyHit()` subtracts HP, emits `combat:hit` / `combat:kill`.
- *
- * This keeps Three.js 100% in infrastructure while domain owns all rules.
- *
- * ╔══════════════════════════════════════════════════════════════╗
- * ║  May import from src/core/ only. No Three.js.               ║
- * ╚══════════════════════════════════════════════════════════════╝
+ * @description Orchestrates combat logic, projectiles, and damage resolution.
  */
 
-import { eventBus, CombatEvents, PlayerEvents, ZombieEvents } from '../core/EventBus.js';
+import { Projectile } from '../core/entities/Projectile.js';
+import { Vector3Utils } from '../core/math/Vector3Utils.js';
+import { eventBus, PlayerEvents, ZombieEvents, CombatEvents, LevelEvents } from '../core/EventBus.js';
 
-// ─────────────────────────────────────────────────────────────
-// Additional combat-specific event names (extend the catalog)
-// ─────────────────────────────────────────────────────────────
-
-export const CombatSystemEvents = {
-  FIRED:      'combat:fired',      // Player attempted to fire
-  RAY_RESULT: 'combat:rayResult',  // Infrastructure returns ray hit data
-  RELOAD_START:  'combat:reloadStart',
-  RELOAD_FINISH: 'combat:reloadFinish',
-};
-
-// ─────────────────────────────────────────────────────────────
-// Type Definitions
-// ─────────────────────────────────────────────────────────────
-
-/**
- * @typedef {Object} RayHitResult
- * @property {boolean} hit          - Whether the ray intersected a zombie hitbox.
- * @property {string}  [zombieId]   - ID of the zombie that was hit.
- * @property {number}  [distance]   - Distance from player to hit point.
- * @property {{ x: number, y: number, z: number }} [point] - World-space hit point.
- */
-
-/**
- * @typedef {Object} ZombieRecord
- * @property {string}  id
- * @property {number}  health
- * @property {number}  maxHealth
- * @property {boolean} isDead
- */
-
-// ─────────────────────────────────────────────────────────────
-// CombatSystem
-// ─────────────────────────────────────────────────────────────
+/** @typedef {import('../core/entities/Zombie').Zombie} Zombie */
+/** @typedef {import('../core/math/Vector3Utils').Vec3} Vec3 */
 
 export class CombatSystem {
   /**
-   * @param {Player}   player   - The domain Player entity.
-   * @param {EventBus} [bus]    - EventBus instance.
-   * @param {number}   [reloadMs] - Reload animation duration in ms. Default: 1500.
-   * @param {number}   [damage]   - Damage per bullet. Default: 34 (3 shots to kill at 100 HP).
+   * @param {Object} deps
+   * @param {Map<string, Zombie>} deps.zombieRegistry - Reference to active zombies.
    */
-  constructor(player, bus = eventBus, reloadMs = 1500, damage = 34) {
-    if (!player || player.type !== 'player') {
-      throw new TypeError('CombatSystem: requires a Player entity.');
-    }
+  constructor({ zombieRegistry }) {
+    /** @type {Map<string, Zombie>} */
+    this.zombies = zombieRegistry;
+    /** @type {Set<Projectile>} */
+    this.projectiles = new Set();
+    
+    this._setupListeners();
+  }
 
-    /** @private @type {Player} */
-    this._player = player;
+  _setupListeners() {
+    // Listen for player shoot events
+    eventBus.on(PlayerEvents.FIRED, (payload) => {
+      this.spawnProjectile(payload);
+    });
 
-    /** @private @type {EventBus} */
-    this._bus = bus;
-
-    /** @private @type {number} */
-    this._reloadMs = reloadMs;
-
-    /** @private @type {number} Damage per bullet. */
-    this._damage = damage;
-
-    /**
-     * Registry of all live zombies by ID.
-     * Populated externally via `registerZombie()` / `removeZombie()`.
-     * @private @type {Map<string, ZombieRecord>}
-     */
-    this._zombies = new Map();
-
-    /** @private @type {ReturnType<typeof setTimeout> | null} */
-    this._reloadTimer = null;
-
-    // Subscribe: when infrastructure returns a ray result, apply domain logic.
-    this._unsubRay = this._bus.on(CombatSystemEvents.RAY_RESULT, (result) => {
-      this._applyRayResult(result);
+    eventBus.on(LevelEvents.GENERATED, () => {
+      this._clearProjectiles();
     });
   }
 
-  // ───────────────────────────────────────────────────────────
-  // Public API
-  // ───────────────────────────────────────────────────────────
+  /** @private */
+  _clearProjectiles() {
+    for (const p of this.projectiles) {
+      eventBus.emit(CombatEvents.PROJECTILE_DESTROYED, { projectileId: p.id });
+    }
+    this.projectiles.clear();
+  }
 
   /**
-   * Called each frame by `PlayerController` when the fire button is held.
-   * Rate-limiting (fire rate) is handled here via `_lastFireTime`.
-   *
-   * @param {number} [fireRateMs] - Milliseconds between shots. Default: 150.
-   * @returns {boolean} `true` if a shot was fired.
+   * @param {Object} params
+   * @param {Vec3}   params.origin    - Starting position.
+   * @param {Vec3}   params.direction - Normalized direction.
+   * @param {number} params.damage    - Projectile damage.
+   * @param {number} params.speed     - Projectile speed.
    */
-  fire(fireRateMs = 150) {
-    const now = performance.now();
-    if (!this._player.isAlive) return false;
-    if (this._player.isReloading) return false;
-    if (this._player.ammo <= 0) {
-      this.reload();
-      return false;
-    }
-    if (now - (this._lastFireTime ?? 0) < fireRateMs) return false;
-
-    this._lastFireTime = now;
-    const consumed = this._player.consumeAmmo();
-    if (!consumed) return false;
-
-    this._bus.emit(PlayerEvents.AMMO_CHANGED, this._player.toSnapshot());
-
-    // Signal infrastructure to run the ray (async — does NOT block here)
-    this._bus.emit(CombatSystemEvents.FIRED, {
-      playerId: this._player.id,
-      position: { ...this._player.position },
-      yaw:      this._player.yaw,
-      pitch:    this._player.pitch,
+  spawnProjectile({ origin, direction, damage, speed }) {
+    const id = `projectile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const projectile = new Projectile({
+      id,
+      position: origin,
+      direction,
+      damage,
+      speed
     });
 
-    return true;
+    this.projectiles.add(projectile);
+    
+    eventBus.emit(CombatEvents.PROJECTILE_SPAWNED, {
+      projectileId: id,
+      position: origin,
+      direction
+    });
   }
 
   /**
-   * Begin reload sequence (domain sets flag; timer completes it).
-   * @returns {boolean} `true` if reload started.
+   * Update all projectiles and check for intersections.
+   * @param {number} deltaTime 
    */
-  reload() {
-    if (!this._player.startReload()) return false;
-    this._bus.emit(CombatSystemEvents.RELOAD_START, this._player.toSnapshot());
+  update(deltaTime) {
+    for (const projectile of this.projectiles) {
+      if (!projectile.active) {
+        this.projectiles.delete(projectile);
+        eventBus.emit(CombatEvents.PROJECTILE_DESTROYED, { projectileId: projectile.id });
+        continue;
+      }
 
-    // Clear any previous timer (safety guard)
-    if (this._reloadTimer !== null) clearTimeout(this._reloadTimer);
+      const oldPos = Vector3Utils.clone(projectile.position);
+      projectile.update(deltaTime);
+      const newPos = projectile.position;
 
-    this._reloadTimer = setTimeout(() => {
-      this._player.finishReload();
-      this._reloadTimer = null;
-      this._bus.emit(CombatSystemEvents.RELOAD_FINISH, this._player.toSnapshot());
-      this._bus.emit(PlayerEvents.AMMO_CHANGED, this._player.toSnapshot());
-    }, this._reloadMs);
+      eventBus.emit(CombatEvents.PROJECTILE_MOVED, {
+        projectileId: projectile.id,
+        position: newPos
+      });
 
-    return true;
+      // Check for zombie intersections
+      this._checkIntersections(projectile, oldPos, newPos);
+    }
   }
 
   /**
-   * Register a zombie entity so CombatSystem can track its HP.
-   * @param {string} id
-   * @param {number} health
-   */
-  registerZombie(id, health) {
-    this._zombies.set(id, { id, health, maxHealth: health, isDead: false });
-  }
-
-  /**
-   * Forcibly remove a zombie (e.g., when respawning or level change).
-   * @param {string} id
-   */
-  removeZombie(id) {
-    this._zombies.delete(id);
-  }
-
-  /**
-   * Apply direct damage to a zombie (bypasses raycast — used for Area-of-Effect
-   * or scripted damage in tests).
-   * @param {string} zombieId
-   * @param {number} amount
-   */
-  damageZombie(zombieId, amount) {
-    this._applyDamage(zombieId, amount, null);
-  }
-
-  /** Clean up EventBus subscriptions and any pending timers. */
-  dispose() {
-    this._unsubRay();
-    if (this._reloadTimer !== null) clearTimeout(this._reloadTimer);
-  }
-
-  // ───────────────────────────────────────────────────────────
-  // Private
-  // ───────────────────────────────────────────────────────────
-
-  /**
-   * Handle the ray result emitted by the infrastructure raycaster.
+   * Cylinder-based intersection check for hitboxes.
    * @private
-   * @param {RayHitResult} result
+   * @param {Projectile} projectile 
+   * @param {Vec3} oldPos 
+   * @param {Vec3} newPos 
    */
-  _applyRayResult(result) {
-    if (!result.hit || !result.zombieId) {
-      this._bus.emit(CombatEvents.MISS, { playerId: this._player.id });
-      return;
+  _checkIntersections(projectile, oldPos, newPos) {
+    const ZOMBIE_HEIGHT = 2.5;
+
+    for (const zombie of this.zombies.values()) {
+      if (!zombie.active) continue;
+
+      // 1. Height check: Check if the projectile is within the vertical range of the zombie
+      // Zombie is at ground level (y=0) up to y=ZOMBIE_HEIGHT
+      const withinHeight = (newPos.y >= 0 && newPos.y <= ZOMBIE_HEIGHT) ||
+                           (oldPos.y >= 0 && oldPos.y <= ZOMBIE_HEIGHT);
+
+      if (!withinHeight) continue;
+
+      // 2. 2D distance check: Check if the projectile is within the hitbox radius on the XZ plane
+      const zombiePos2D = { x: zombie.position.x, z: zombie.position.z };
+      const oldPos2D = { x: oldPos.x, z: oldPos.z };
+      const newPos2D = { x: newPos.x, z: newPos.z };
+
+      const distance2D = this._distancePointToSegment2D(zombiePos2D, oldPos2D, newPos2D);
+
+      if (distance2D <= zombie.hitboxRadius) {
+        this._resolveHit(projectile, zombie);
+        break; // Projectile destroyed on first hit
+      }
     }
-    this._applyDamage(result.zombieId, this._damage, result.point ?? null);
   }
 
   /**
-   * Core damage application — updates zombie HP and emits events.
    * @private
-   * @param {string} zombieId
-   * @param {number} amount
-   * @param {{ x: number, y: number, z: number } | null} hitPoint
+   * @param {Projectile} projectile 
+   * @param {Zombie} zombie 
    */
-  _applyDamage(zombieId, amount, hitPoint) {
-    const zombie = this._zombies.get(zombieId);
-    if (!zombie || zombie.isDead) return;
+  _resolveHit(projectile, zombie) {
+    projectile.active = false;
+    zombie.takeDamage(projectile.damage);
 
-    zombie.health = Math.max(0, zombie.health - amount);
-
-    this._bus.emit(CombatEvents.HIT, {
-      zombieId,
-      damage:   amount,
-      remaining: zombie.health,
-      hitPoint,
+    eventBus.emit(ZombieEvents.DAMAGED, {
+      zombieId: zombie.id,
+      damage: projectile.damage,
+      hpRemaining: zombie.health,
+      position: Vector3Utils.clone(zombie.position)
     });
 
-    this._bus.emit(ZombieEvents.DAMAGED, {
-      id:      zombie.id,
-      health:  zombie.health,
-      maxHealth: zombie.maxHealth,
-    });
-
-    if (zombie.health <= 0) {
-      zombie.isDead = true;
-      this._bus.emit(CombatEvents.KILL,  { zombieId, killer: this._player.id });
-      this._bus.emit(ZombieEvents.DIED,  { id: zombie.id });
-      this._zombies.delete(zombieId);
+    if (zombie.isDead()) {
+      eventBus.emit(ZombieEvents.DIED, {
+        zombieId: zombie.id,
+        position: Vector3Utils.clone(zombie.position)
+      });
     }
+  }
+
+  /**
+   * @private
+   * @param {{x: number, z: number}} p - Point (Zombie)
+   * @param {{x: number, z: number}} a - Segment start
+   * @param {{x: number, z: number}} b - Segment end
+   * @returns {number}
+   */
+  _distancePointToSegment2D(p, a, b) {
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const l2 = dx * dx + dz * dz;
+    if (l2 === 0) return Math.sqrt((p.x - a.x) ** 2 + (p.z - a.z) ** 2);
+
+    let t = ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2;
+    t = Math.max(0, Math.min(1, t));
+
+    const projection = {
+      x: a.x + t * dx,
+      z: a.z + t * dz
+    };
+
+    const distDx = p.x - projection.x;
+    const distDz = p.z - projection.z;
+    return Math.sqrt(distDx * distDx + distDz * distDz);
   }
 }

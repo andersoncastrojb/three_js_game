@@ -13,7 +13,6 @@
  */
 
 import { eventBus, PlayerEvents, CombatEvents } from '../core/EventBus.js';
-import { CombatSystemEvents } from '../use-cases/CombatSystem.js';
 
 export class PlayerHUD {
   /** @type {HTMLElement} */
@@ -74,6 +73,16 @@ export class PlayerHUD {
           </div>
         </div>
 
+        <!-- Scans -->
+        <div class="stat-block" id="stat-scans">
+          <span class="stat-label">MAPS</span>
+          <div class="ammo-display">
+            <span class="ammo-current" id="scans-current" style="color: #00ddff;">3</span>
+            <span class="ammo-sep">/</span>
+            <span class="ammo-max" id="scans-max">3</span>
+          </div>
+        </div>
+
       </div>
 
       <!-- Reload indicator -->
@@ -112,14 +121,15 @@ export class PlayerHUD {
     this.#unsubs.push(
       eventBus.on(PlayerEvents.HEALTH_CHANGED, (s) => this.#updateHealth(s)),
       eventBus.on(PlayerEvents.AMMO_CHANGED,   (s) => this.#updateAmmo(s)),
+      eventBus.on(PlayerEvents.SCAN_CHANGED,   (s) => this.#updateScans(s)),
       eventBus.on(PlayerEvents.SPAWNED,        (s) => this.#syncAll(s)),
       eventBus.on(PlayerEvents.DIED,           ()  => this.#flashDamage(true)),
 
       // Reload UI
-      eventBus.on(CombatSystemEvents.RELOAD_START,  () => {
+      eventBus.on(PlayerEvents.RELOAD_START,  () => {
         document.getElementById('reload-indicator').classList.remove('hidden');
       }),
-      eventBus.on(CombatSystemEvents.RELOAD_FINISH, (s) => {
+      eventBus.on(PlayerEvents.RELOAD_FINISH, (s) => {
         document.getElementById('reload-indicator').classList.add('hidden');
         this.#updateAmmo(s);
       }),
@@ -133,12 +143,36 @@ export class PlayerHUD {
           this._lastHealth = s.health;
         }
       }),
+
+      // End states
+      eventBus.on(PlayerEvents.DIED, (s) => {
+        if (s.lives <= 0) {
+           this.#showGameOver();
+        }
+      }),
+      eventBus.on('level:changed', () => {
+         this.#showLevelComplete();
+      })
     );
   }
 
   // ─────────────────────────────────────────────────────────
   // Update Methods
   // ─────────────────────────────────────────────────────────
+
+  #resetLockPrompt() {
+    const prompt = document.getElementById('lock-prompt');
+    prompt.innerHTML = `
+      <div class="lock-inner">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="5" y="11" width="14" height="10" rx="2"/>
+          <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        </svg>
+        <p>Click to Enter</p>
+        <span>WASD · Mouse to aim · Click to fire · R to reload</span>
+      </div>
+    `;
+  }
 
   /**
    * @param {import('../core/entities/Player.js').PlayerSnapshot} snap
@@ -181,6 +215,17 @@ export class PlayerHUD {
   }
 
   /**
+   * @param {import('../core/entities/Player.js').PlayerSnapshot} snap
+   */
+  #updateScans(snap) {
+    document.getElementById('scans-current').textContent = snap.scans;
+    document.getElementById('scans-max').textContent     = snap.maxScans;
+    
+    const scansEl = document.getElementById('scans-current');
+    scansEl.style.color = snap.scans > 0 ? '#00ddff' : '#ff1744';
+  }
+
+  /**
    * Full sync of all HUD panels from a player snapshot.
    * @param {import('../core/entities/Player.js').PlayerSnapshot} snap
    */
@@ -188,6 +233,8 @@ export class PlayerHUD {
     this.#updateHealth(snap);
     this.#updateAmmo(snap);
     this.#updateLives(snap);
+    this.#updateScans(snap);
+    this.#resetLockPrompt();
     this._lastHealth = snap.health;
   }
 
@@ -201,6 +248,55 @@ export class PlayerHUD {
     setTimeout(() => {
       el.classList.remove('flash-hit', 'flash-death');
     }, isGameOver ? 800 : 250);
+  }
+
+  #showGameOver() {
+    document.exitPointerLock();
+    const prompt = document.getElementById('lock-prompt');
+    prompt.innerHTML = `
+      <div class="lock-inner" style="background: rgba(100,0,0,0.9); border: 2px solid red;">
+        <h1 style="color: white; font-size: 3rem; margin: 0 0 10px 0;">GAME OVER</h1>
+        <p style="color: #ffaaaa; margin: 0 0 20px 0;">You have been consumed.</p>
+        <button id="restart-btn" style="padding: 10px 20px; font-size: 1.2rem; cursor: pointer; background: #330000; color: white; border: 1px solid red; border-radius: 4px;">Restart Level</button>
+      </div>
+    `;
+    prompt.classList.remove('hidden');
+
+    document.getElementById('restart-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      eventBus.emit('game:restartLevel');
+    });
+  }
+
+  #showLevelComplete() {
+    document.exitPointerLock();
+    const prompt = document.getElementById('lock-prompt');
+    prompt.innerHTML = `
+      <div class="lock-inner" style="background: rgba(0,100,0,0.9); border: 2px solid lime;">
+        <h1 style="color: white; font-size: 3rem; margin: 0 0 10px 0;">ESCAPED!</h1>
+        <p style="color: #aaffaa; margin: 0 0 20px 0;">You survived the maze.</p>
+        <button id="next-level-btn" style="padding: 10px 20px; font-size: 1.2rem; cursor: pointer; background: #003300; color: white; border: 1px solid lime; border-radius: 4px;">Next Level (Press Enter)</button>
+      </div>
+    `;
+    prompt.classList.remove('hidden');
+
+    const nextLvl = () => {
+      eventBus.emit('game:nextLevel');
+    };
+
+    document.getElementById('next-level-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      nextLvl();
+    });
+    
+    // Add Enter key listener specifically for the win screen
+    const enterListener = (e) => {
+       if (e.key === 'Enter') {
+          window.removeEventListener('keydown', enterListener);
+          nextLvl();
+       }
+    };
+    window.addEventListener('keydown', enterListener);
   }
 
   // ─────────────────────────────────────────────────────────

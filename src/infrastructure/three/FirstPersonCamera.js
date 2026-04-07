@@ -13,7 +13,7 @@
  */
 
 import * as THREE from 'three';
-import { PlayerEvents } from '../../core/EventBus.js';
+import { PlayerEvents, LevelEvents } from '../../core/EventBus.js';
 
 /** Camera eye height above the floor plane (world-units). */
 const EYE_HEIGHT = 1.7;
@@ -48,6 +48,11 @@ export class FirstPersonCamera {
 
     /** @private Whether pointer-lock is active. */
     this._locked = false;
+    
+    /** @private Center of maze for panoramic view */
+    this._mazeCenter = { x: 0, z: 0 };
+    /** @private Height of panoramic view */
+    this._camHeight = 50;
 
     // Set initial camera field-of-view
     this._camera.fov = 75;
@@ -55,6 +60,16 @@ export class FirstPersonCamera {
 
     this._attachPointerLock();
     this._syncCamera();
+    
+    this._bus.on(LevelEvents.GENERATED, (payload) => {
+      const cs = 4; // match MazeRenderer cell size
+      const width = payload.cols * cs;
+      const depth = payload.rows * cs;
+      this._mazeCenter.x = width / 2;
+      this._mazeCenter.z = depth / 2;
+      // Calculate camera height based on FOV to fit the whole maze
+      this._camHeight = Math.max(width, depth) * 0.7;
+    });
   }
 
   // ───────────────────────────────────────────────────────────
@@ -122,14 +137,19 @@ export class FirstPersonCamera {
   _syncCamera() {
     const p = this._player;
 
-    // Position: at player world position, raised to eye height
-    this._camera.position.set(p.position.x, EYE_HEIGHT, p.position.z);
-
-    // Rotation: Three.js Euler order YXZ is correct for FPS cameras
-    this._camera.rotation.order = 'YXZ';
-    this._camera.rotation.y = p.yaw;
-    this._camera.rotation.x = p.pitch;
-    this._camera.rotation.z = 0;
+    if (p.isScanning) {
+      // Panoramic / Top-down view
+      this._camera.position.set(this._mazeCenter.x, this._camHeight, this._mazeCenter.z);
+      this._camera.rotation.order = 'YXZ';
+      this._camera.rotation.set(-Math.PI / 2, 0, 0);
+    } else {
+      // First Person view
+      this._camera.position.set(p.position.x, EYE_HEIGHT, p.position.z);
+      this._camera.rotation.order = 'YXZ';
+      this._camera.rotation.y = p.yaw;
+      this._camera.rotation.x = p.pitch;
+      this._camera.rotation.z = 0;
+    }
   }
 
   // ───────────────────────────────────────────────────────────

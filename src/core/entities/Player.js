@@ -46,8 +46,11 @@ export const PLAYER_PITCH_LIMIT = Math.PI * 0.44;
  * @property {number}  lives
  * @property {number}  ammo
  * @property {number}  maxAmmo
+ * @property {number}  scans
+ * @property {number}  maxScans
  * @property {boolean} isAlive
  * @property {boolean} isReloading
+ * @property {boolean} isScanning
  * @property {{ x: number, y: number, z: number }} position
  * @property {number}  yaw    - Horizontal look angle in radians.
  * @property {number}  pitch  - Vertical look angle in radians (clamped).
@@ -87,8 +90,17 @@ export class Player extends GameEntity {
     /** @type {number} */
     this.maxAmmo = maxAmmo;
 
+    /** @type {number} Current panoramic scans remaining. */
+    this.scans = 3;
+
+    /** @type {number} */
+    this.maxScans = 3;
+
     /** @type {boolean} True while reload animation is running. */
     this.isReloading = false;
+
+    /** @type {boolean} True while panoramic view is active. */
+    this.isScanning = false;
 
     /** Horizontal look angle in radians (yaw around Y axis). */
     this.yaw = 0;
@@ -142,7 +154,9 @@ export class Player extends GameEntity {
     this.lives  -= 1;
     this.health  = this.maxHealth;
     this.ammo    = this.maxAmmo;
+    this.scans   = this.maxScans;
     this.isReloading = false;
+    this.isScanning = false;
     return true;
   }
 
@@ -213,8 +227,11 @@ export class Player extends GameEntity {
       lives:       this.lives,
       ammo:        this.ammo,
       maxAmmo:     this.maxAmmo,
+      scans:       this.scans,
+      maxScans:    this.maxScans,
       isAlive:     this.isAlive,
       isReloading: this.isReloading,
+      isScanning:  this.isScanning,
       position:    { ...this.position },
       yaw:         this.yaw,
       pitch:       this.pitch,

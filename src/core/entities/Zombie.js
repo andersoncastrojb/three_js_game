@@ -1,63 +1,82 @@
 /**
  * @file Zombie.js
  * @layer Core / Domain
- * @description Domain entity representing an individual Zombie.
- * Tracks health, move speed, damage output, and AI state.
- *
- * ╔══════════════════════════════════════════════════════════════╗
- * ║  ZERO external dependencies permitted in this file.         ║
- * ║  No Three.js · No DOM · No LLMs · No Vue                   ║
- * ╚══════════════════════════════════════════════════════════════╝
+ * @description Zombie entity with AI state management.
  */
 
 import { GameEntity } from './GameEntity.js';
 
-/** @typedef {'idle' | 'wander' | 'chase' | 'attack' | 'dead'} ZombieState */
+/**
+ * @typedef {'idle' | 'chase' | 'attack' | 'flee'} ZombieState
+ */
 
 export class Zombie extends GameEntity {
   /**
-   * @param {string} id
-   * @param {number} maxHealth
-   * @param {number} damage
-   * @param {number} speed
+   * @param {string} id - Unique identifier.
+   * @param {Object} params
+   * @param {number} params.health - Current health points.
+   * @param {number} params.speed  - Movement speed.
+   * @param {number} [params.hitboxRadius=0.8] - Radius for collision detection.
+   * @param {number} [params.damage=15] - Damage dealt per attack.
+   * @param {number} [params.attackRange=1.8] - Range within which attacks connect.
+   * @param {number} [params.attackCooldown=1500] - Ms between attacks.
    */
-  constructor(id, maxHealth = 100, damage = 15, speed = 2.5) {
+  constructor(id, { health, speed, hitboxRadius = 0.8, damage = 15, attackRange = 1.8, attackCooldown = 1500 }) {
     super(id, 'zombie');
-
-    this.health = maxHealth;
-    this.maxHealth = maxHealth;
-    this.damage = damage;
-    this.speed = speed;
-
-    /** @type {ZombieState} */
-    this.state = 'idle';
-
-    /** Target position for wandering */
-    this.targetPos = null;
-
-    /** Time tracking for state transitions */
-    this.stateTimer = 0;
     
-    /** Attack cooldown tracking */
+    /** @type {number} */
+    this.health = health;
+    /** @type {number} */
+    this.maxHealth = health;
+    /** @type {number} */
+    this.speed = speed;
+    /** @type {number} */
+    this.hitboxRadius = hitboxRadius;
+    
+    /** @type {number} */
+    this.damage = damage;
+    /** @type {number} */
+    this.attackRange = attackRange;
+    /** @type {number} */
+    this.attackCooldown = attackCooldown;
+    /** @type {number} */
     this.lastAttackTime = 0;
-
-    /** Async AI Loop tracking */
-    this.lastThinkTime = 0;
-    this.isThinking = false;
+    
+    /** 
+     * @type {ZombieState} 
+     * @private
+     */
+    this._aiState = 'idle';
   }
 
-  get isAlive() { return this.health > 0 && this.state !== 'dead'; }
+  /** @returns {ZombieState} */
+  get aiState() {
+    return this._aiState;
+  }
+
+  /** 
+   * @param {ZombieState} newState 
+   */
+  setAIState(newState) {
+    const validStates = ['idle', 'chase', 'attack', 'flee'];
+    if (validStates.includes(newState)) {
+      this._aiState = newState;
+    }
+  }
 
   /**
-   * Returns a snapshot for Events.
+   * Apply damage to the zombie.
+   * @param {number} amount 
    */
-  toSnapshot() {
-    return {
-      id:        this.id,
-      health:    this.health,
-      maxHealth: this.maxHealth,
-      state:     this.state,
-      position:  { ...this.position },
-    };
+  takeDamage(amount) {
+    this.health = Math.max(0, this.health - amount);
+    if (this.health <= 0) {
+      this.active = false;
+    }
+  }
+
+  /** @returns {boolean} */
+  isDead() {
+    return this.health <= 0;
   }
 }

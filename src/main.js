@@ -14,7 +14,7 @@ import './style.css';
 import { Settings } from '@config/settings.js';
 
 // ── Core ─────────────────────────────────────────────────────────────────────
-import { eventBus } from './core/EventBus.js';
+import { eventBus, ZombieEvents, LevelEvents, PlayerEvents } from './core/EventBus.js';
 
 // ── Use Cases ─────────────────────────────────────────────────────────────────
 import { GameLoop }    from './use-cases/GameLoop.js';
@@ -30,8 +30,12 @@ import { RenderLoop }        from './infrastructure/three/RenderLoop.js';
 import { createLighting }    from './infrastructure/three/LightingSetup.js';
 import { MazeRenderer }      from './infrastructure/three/MazeRenderer.js';
 import { FirstPersonCamera } from './infrastructure/three/FirstPersonCamera.js';
-import { ProjectileRaycaster } from './infrastructure/three/ProjectileRaycaster.js';
+import { CombatRenderer }    from './infrastructure/three/CombatRenderer.js';
 import * as THREE from 'three';
+
+// ── Infrastructure / AI ───────────────────────────────────────────────────────
+import { AIModelFactory } from './infrastructure/ai/ModelFactory.js';
+import { ContextLoader }  from './infrastructure/ai/ContextLoader.js';
 
 // ── Infrastructure / Skills ───────────────────────────────────────────────────
 import { createSkillAdapter } from './infrastructure/skills/AgentSkillsBridge.js';
@@ -76,10 +80,20 @@ const mazeRenderer = new MazeRenderer(sceneManager.scene, eventBus, {
 // 2c. Player systems: CombatSystem → PlayerController → FirstPersonCamera
 // ─────────────────────────────────────────────────────────────────────────────
 const inputHandler   = new InputHandler();
-const combatSystem   = new CombatSystem(player, eventBus);
+const zombieRegistry = new Map();
+
+const combatSystem   = new CombatSystem({ zombieRegistry });
 const playerCtrl     = new PlayerController(player, inputHandler, combatSystem, eventBus);
-const zombieSystem   = new ZombieSystem(player, combatSystem);
-const projRaycaster  = new ProjectileRaycaster(sceneManager.scene, eventBus);
+
+const zombieSystem   = new ZombieSystem({ 
+  zombieRegistry, 
+  player, 
+  modelFactory: AIModelFactory, 
+  contextLoader: ContextLoader 
+});
+
+// Infrastructure Combat Renderer
+const combatRenderer = new CombatRenderer(sceneManager.scene, sceneManager.camera);
 
 // Spawn the player at the maze entrance (cell 0,0 → world centre of that cell)
 const CELL_SIZE  = 4;
@@ -96,52 +110,113 @@ const fpsCamera = new FirstPersonCamera(
   canvas
 );
 
-// Register PlayerController + FPS camera + ZombieSystem as game-loop systems
+// Register systems as game-loop systems
 gameLoop.addSystem(playerCtrl);
 gameLoop.addSystem(fpsCamera);
+gameLoop.addSystem(combatSystem);
 gameLoop.addSystem(zombieSystem);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Zombie → Three.js visual binding (Infrastructure)
 // ─────────────────────────────────────────────────────────────────────────────
-import { ZombieEvents } from './core/EventBus.js';
 
 const zombieMeshes = new Map();
 
+// Create shared materials
+const skinMat = new THREE.MeshStandardMaterial({ color: 0x5a7a40, roughness: 0.9 });
+const shirtMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.9 });
+const pantsMat = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.9 });
+const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+const torsoGeo = new THREE.BoxGeometry(0.8, 1.0, 0.4);
+const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+const legGeo = new THREE.BoxGeometry(0.35, 0.9, 0.35);
+
+// Scan markers for zombies
+const zMarkerGeo = new THREE.SphereGeometry(0.5, 8, 8);
+const zMarkerMat = new THREE.MeshBasicMaterial({ 
+  color: 0xff0000, 
+  depthTest: false, 
+  transparent: true, 
+  opacity: 0.8 
+});
+
 eventBus.on(ZombieEvents.SPAWNED, (z) => {
-  const geo = new THREE.BoxGeometry(1.2, 2.5, 1.2);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x448833, roughness: 0.9 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  // Store zombie id so the raycaster can find it
-  mesh.userData.zombieId = z.id;
-  mesh.position.set(z.position.x, 2.5 / 2, z.position.z);
-  sceneManager.add(mesh);
-  zombieMeshes.set(z.id, mesh);
+  const group = new THREE.Group();
+  
+  const zSkin = skinMat.clone();
+  const zShirt = shirtMat.clone();
+  const zPants = pantsMat.clone();
+  
+  // Humanoid parts
+  const head = new THREE.Mesh(headGeo, zSkin); head.position.y = 2.2; group.add(head);
+  const torso = new THREE.Mesh(torsoGeo, zShirt); torso.position.y = 1.4; group.add(torso);
+  const leftArm = new THREE.Mesh(armGeo, zSkin); leftArm.position.set(-0.55, 1.6, -0.3); leftArm.rotation.x = -Math.PI / 2; group.add(leftArm);
+  const rightArm = new THREE.Mesh(armGeo, zSkin); rightArm.position.set(0.55, 1.6, -0.3); rightArm.rotation.x = -Math.PI / 2; group.add(rightArm);
+  const leftLeg = new THREE.Mesh(legGeo, zPants); leftLeg.position.set(-0.22, 0.45, 0); group.add(leftLeg);
+  const rightLeg = new THREE.Mesh(legGeo, zPants); rightLeg.position.set(0.22, 0.45, 0); group.add(rightLeg);
+
+  // ADD SCAN MARKER (Hovering Red Dot)
+  const marker = new THREE.Mesh(zMarkerGeo, zMarkerMat);
+  marker.position.y = 4.5; // Hover above zombie
+  marker.name = 'scanMarker';
+  marker.visible = false; // Hidden by default
+  marker.renderOrder = 999;
+  group.add(marker);
+
+  group.userData.zombieId = z.id;
+  group.position.set(z.position.x, 0, z.position.z);
+  sceneManager.add(group);
+  zombieMeshes.set(z.id, group);
+});
+
+// Toggle markers on scan
+eventBus.on(PlayerEvents.SCAN_CHANGED, (p) => {
+  for (const group of zombieMeshes.values()) {
+    const marker = group.getObjectByName('scanMarker');
+    if (marker) marker.visible = p.isScanning;
+  }
 });
 
 eventBus.on(ZombieEvents.MOVED, (z) => {
-  const mesh = zombieMeshes.get(z.id);
-  if (mesh) {
-    mesh.position.set(z.position.x, 2.5 / 2, z.position.z);
+  const group = zombieMeshes.get(z.zombieId);
+  if (group) {
+    group.position.set(z.position.x, 0, z.position.z);
+    if (z.rotation) {
+      group.rotation.y = z.rotation.y;
+    }
   }
 });
 
 eventBus.on(ZombieEvents.DAMAGED, (z) => {
-  const mesh = zombieMeshes.get(z.id);
-  if (mesh) {
-    mesh.material.emissive.setHex(0x550000);
-    setTimeout(() => { if (mesh) mesh.material.emissive.setHex(0x000000); }, 150);
+  const group = zombieMeshes.get(z.zombieId);
+  if (group) {
+    // Flash all children
+    group.children.forEach(child => {
+       if (child.material && child.material.emissive) {
+          child.material.emissive.setHex(0x550000);
+       }
+    });
+    setTimeout(() => {
+       if (group) {
+         group.children.forEach(child => {
+            if (child.material && child.material.emissive) {
+               child.material.emissive.setHex(0x000000);
+            }
+         });
+       }
+    }, 150);
   }
 });
 
 eventBus.on(ZombieEvents.DIED, (z) => {
-  const mesh = zombieMeshes.get(z.id);
-  if (mesh) {
-    sceneManager.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-    zombieMeshes.delete(z.id);
+  const group = zombieMeshes.get(z.zombieId);
+  if (group) {
+    sceneManager.remove(group);
+    group.children.forEach(child => {
+      // Dispose the CLONED materials for this specific zombie
+      if (child.material) child.material.dispose();
+    });
+    zombieMeshes.delete(z.zombieId);
   }
 });
 
@@ -152,26 +227,45 @@ eventBus.on(ZombieEvents.DIED, (z) => {
 // ─────────────────────────────────────────────────────────────────────────────
 levelManager.generateLevel();
 
-// Spawn a few sample zombies around the maze
-const cs = 4;
-zombieSystem.spawn('zom-1', cs * 1.5, cs * 1.5);
-zombieSystem.spawn('zom-2', cs * 3.5, cs * 2.5);
-zombieSystem.spawn('zom-3', cs * 2.5, cs * 6.5);
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Start render loop
+// 5. Start render loop and manage pause state
 // ─────────────────────────────────────────────────────────────────────────────
 const renderLoop = new RenderLoop(sceneManager, gameLoop);
 renderLoop.start();
 
+// Pause game logic when pointer lock is lost
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === canvas) {
+    if (!gameLoop.isRunning) gameLoop.start();
+  } else {
+    if (gameLoop.isRunning) {
+      playerCtrl.cancelScan(); // Force cancel scan on pause
+      gameLoop.stop();
+    }
+  }
+});
+
+// Restart level handling
+eventBus.on('game:restartLevel', () => {
+  levelManager.restartCurrentLevel();
+});
+
+// Next level handling
+eventBus.on('game:nextLevel', () => {
+  levelManager.nextLevel();
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Presentation layer
+// 6. Presentation & Audio layer
 // ─────────────────────────────────────────────────────────────────────────────
+import { SoundManager } from './infrastructure/audio/SoundManager.js';
+
 new HUD();
 new PlayerHUD();   // Health / Ammo / Lives / Crosshair
+new SoundManager(); // Audio system
 // InputHandler already created in step 2c above
 
 if (Settings.DEBUG) {
   console.log('🟢 Three.js Clean Architecture – DEBUG mode active.');
-  window._debug = { gameLoop, levelManager, mazeRenderer, player, combatSystem, playerCtrl, zombieSystem, projRaycaster, sceneManager, eventBus };
+  window._debug = { gameLoop, levelManager, mazeRenderer, player, combatSystem, playerCtrl, zombieSystem, combatRenderer, sceneManager, eventBus };
 }

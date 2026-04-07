@@ -55,6 +55,9 @@ export const PlayerEvents = {
   DIED:        'player:died',
   AMMO_CHANGED: 'player:ammoChanged',
   FIRED:       'player:fired',
+  RELOAD_START: 'player:reloadStart',
+  RELOAD_FINISH: 'player:reloadFinish',
+  SCAN_CHANGED: 'player:scanChanged',
 };
 
 /**
@@ -63,6 +66,9 @@ export const PlayerEvents = {
  * @enum {string}
  */
 export const CombatEvents = {
+  PROJECTILE_SPAWNED: 'combat:projectileSpawned',
+  PROJECTILE_MOVED:   'combat:projectileMoved',
+  PROJECTILE_DESTROYED: 'combat:projectileDestroyed',
   HIT:         'combat:hit',
   KILL:        'combat:kill',
   MISS:        'combat:miss',
@@ -78,6 +84,8 @@ export const ZombieEvents = {
   STATE_CHANGED: 'zombie:stateChanged',
   DAMAGED:     'zombie:damaged',
   DIED:        'zombie:died',
+  ATTACK:      'zombie:attack',
+  GROAN:       'zombie:groan',
 };
 
 // ─────────────────────────────────────────────────────────────

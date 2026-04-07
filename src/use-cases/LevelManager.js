@@ -101,6 +101,9 @@ export class LevelManager {
      * @type {boolean}
      */
     this.active = false;
+
+    /** @private @type {number | null} */
+    this._lastSeed = null;
   }
 
   // ───────────────────────────────────────────────────────────
@@ -129,6 +132,8 @@ export class LevelManager {
       ? seed
       : Date.now();
 
+    this._lastSeed = resolvedSeed;
+
     const maze = new Maze(config.cols, config.rows, resolvedSeed);
     maze.generate();
 
@@ -149,6 +154,15 @@ export class LevelManager {
 
     this._bus.emit(LevelEvents.GENERATED, payload);
     return maze;
+  }
+
+  /**
+   * Regenerate the same level using the same seed.
+   * @returns {Maze}
+   */
+  restartCurrentLevel() {
+    this._destroyCurrent();
+    return this.generateLevel(this._lastSeed);
   }
 
   /**
