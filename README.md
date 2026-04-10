@@ -51,16 +51,14 @@ You spawn at the maze entrance
 
 ### Key features at a glance
 
-| Feature | Details |
-|---|---|
-| 🧩 Procedural maze | Randomly generated every time using a Recursive Backtracker algorithm |
-| 🧟 AI zombies | Each zombie's behavior (`idle` / `chase` / `attack` / `flee`) is decided by **Google Gemini 2.0 Flash Lite** at runtime |
-| 🔫 Combat system | Raycaster-based shooting, bullet-flight projectiles, hit detection, HP management |
-| 🎯 First-person camera | Pointer-lock mouse-look, collision-aware sliding movement |
-| 📟 HUD | Live health bar, ammo counter, lives counter, scan charges, crosshair |
-| 🔊 Spatial audio | Sound effects for gunshots, zombie groans, hits, and player actions |
-| 🗺️ Panoramic scan | A limited consumable that temporarily reveals the top-down map |
-| 🌍 Game world | Factions, lore, and NPC rules loaded from `.md` knowledge files |
+- 🧩 **Procedural maze** — Randomly generated every time using a Recursive Backtracker algorithm
+- 🧟 **AI zombies** — Each zombie's behavior (`idle` / `chase` / `attack` / `flee`) is decided by **Google Gemini 2.0 Flash Lite** at runtime
+- 🔫 **Combat system** — Raycaster-based shooting, bullet-flight projectiles, hit detection, HP management
+- 🎯 **First-person camera** — Pointer-lock mouse-look, collision-aware sliding movement
+- 📟 **HUD** — Live health bar, ammo counter, lives counter, scan charges, crosshair
+- 🔊 **Spatial audio** — Sound effects for gunshots, zombie groans, hits, and player actions
+- 🗺️ **Panoramic scan** — A limited consumable that temporarily reveals the top-down map
+- 🌍 **Game world** — Factions, lore, and NPC rules loaded from `.md` knowledge files
 
 ---
 
@@ -68,17 +66,15 @@ You spawn at the maze entrance
 
 > **First step:** Click anywhere on the game canvas to activate the mouse. This is called **Pointer Lock** — once active, your mouse controls your camera direction.
 
-| Input | Action |
-|---|---|
-| `W` or `↑` | Move **forward** |
-| `S` or `↓` | Move **backward** |
-| `A` or `←` | Strafe **left** |
-| `D` or `→` | Strafe **right** |
-| **Mouse** (after click) | Look around (360° first-person camera) |
-| **Left-click** (hold) | **Shoot** — hold to fire continuously at up to 5 shots/sec |
-| `R` | **Reload** — takes 1.5 seconds, fills magazine to 30 rounds |
-| `V` | **Panoramic Scan** — reveals a top-down map view (3 charges per life) |
-| `Esc` | Release pointer lock (pause mouse capture) |
+- `W` or `↑` → Move **forward**
+- `S` or `↓` → Move **backward**
+- `A` or `←` → Strafe **left**
+- `D` or `→` → Strafe **right**
+- **Mouse** (after click) → Look around (360° first-person camera)
+- **Left-click** (hold) → **Shoot** — hold to fire continuously at up to 5 shots/sec
+- `R` → **Reload** — takes 1.5 seconds, fills magazine to 30 rounds
+- `V` → **Panoramic Scan** — reveals a top-down map view (3 charges per life)
+- `Esc` → Release pointer lock (pause mouse capture)
 
 ### Tips
 - **Diagonal movement** is automatically normalised — you won't move faster diagonally.
@@ -152,11 +148,9 @@ Open your browser at [http://localhost:5173](http://localhost:5173). The game lo
 
 ### Available scripts
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Starts Vite dev server with Hot Module Replacement (HMR) |
-| `npm run build` | Compiles and bundles for production → outputs to `dist/` |
-| `npm run preview` | Serves the production build locally for testing |
+- `npm run dev` — Starts Vite dev server with Hot Module Replacement (HMR)
+- `npm run build` — Compiles and bundles for production → outputs to `dist/`
+- `npm run preview` — Serves the production build locally for testing
 
 ---
 
@@ -164,31 +158,13 @@ Open your browser at [http://localhost:5173](http://localhost:5173). The game lo
 
 Here is the full journey from "pressing W" to "zombie chasing you on screen":
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  YOU press W                                                 │
-│       │                                                      │
-│       ▼                                                      │
-│  InputHandler (presentation layer)                           │
-│  Tracks which keys are currently held down                   │
-│       │                                                      │
-│       ▼                                                      │
-│  PlayerController (use-case layer) — runs every frame        │
-│  Translates WASD into a movement vector                      │
-│  Runs collision detection against the maze grid              │
-│  Updates Player.position (pure math — no Three.js)           │
-│  Emits  PlayerEvents.MOVED  via EventBus                     │
-│       │                                                      │
-│       ▼                                                      │
-│  FirstPersonCamera (infrastructure/three)                    │
-│  Listens for PlayerEvents.MOVED on EventBus                  │
-│  Syncs the Three.js camera to the new position/yaw/pitch     │
-│       │                                                      │
-│       ▼                                                      │
-│  RenderLoop calls THREE.WebGLRenderer.render() at 60 FPS     │
-│  Draws the 3D scene from the camera's perspective            │
-└─────────────────────────────────────────────────────────────┘
-```
+| Step | Component | Layer | What happens |
+|---|---|---|---|
+| 1 | **You press `W`** | — | Input captured by the browser |
+| 2 | **InputHandler** | Presentation | Tracks which keys are currently held down |
+| 3 | **PlayerController** | Use-case — runs every frame | Translates WASD into a movement vector; runs collision detection against the maze grid; updates `Player.position` (pure math — no Three.js); emits `PlayerEvents.MOVED` via EventBus |
+| 4 | **FirstPersonCamera** | Infrastructure / three | Listens for `PlayerEvents.MOVED` on EventBus; syncs the Three.js camera to the new position / yaw / pitch |
+| 5 | **RenderLoop** | Infrastructure / three | Calls `THREE.WebGLRenderer.render()` at 60 FPS — draws the 3D scene from the camera's perspective |
 
 The key insight: **the game world is represented in pure JavaScript objects** (Player, Zombie, Maze). Three.js only **reads** those objects to draw them — it never drives the logic.
 
@@ -200,14 +176,12 @@ The key insight: **the game world is represented in pure JavaScript objects** (P
 
 Without Three.js, WebGL requires thousands of lines of low-level GPU code. Three.js wraps that into simple concepts:
 
-| Three.js Concept | Real-world analogy |
-|---|---|
-| **Scene** | The stage where everything is placed |
-| **Camera** | The "eye" looking into the scene |
-| **Renderer** | The projector that draws what the camera sees onto the screen |
-| **Mesh** | A 3D object (geometry + material = shape + appearance) |
-| **Light** | A light source (ambient, directional, point, etc.) |
-| **Raycaster** | An invisible laser beam used to detect what the player is aiming at |
+- **Scene** — The stage where everything is placed
+- **Camera** — The "eye" looking into the scene
+- **Renderer** — The projector that draws what the camera sees onto the screen
+- **Mesh** — A 3D object (geometry + material = shape + appearance)
+- **Light** — A light source (ambient, directional, point, etc.)
+- **Raycaster** — An invisible laser beam used to detect what the player is aiming at
 
 In this project, **all Three.js code lives exclusively in `src/infrastructure/three/`**. Nothing outside that folder knows Three.js exists.
 
@@ -225,33 +199,12 @@ Why does this matter? It means you can **swap out Three.js for a completely diff
 
 ### The four layers of this project
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  PRESENTATION  (src/presentation/)                                  │
-│  The user interface layer — HTML overlays and DOM updates only.     │
-│  Reads events from the EventBus and updates the HUD, menus, etc.   │
-│  ✅ Can use: DOM, HTML, CSS, browser events                         │
-│  ❌ Cannot use: Three.js, game logic                                │
-├────────────────────────────────────────────────────────────────────┤
-│  INFRASTRUCTURE  (src/infrastructure/)                              │
-│  The "adapter" layer — glues the game to external technologies.     │
-│  Contains: Three.js rendering, Gemini API calls, audio system.      │
-│  ✅ Can use: Three.js, fetch, Web Audio API, external SDKs          │
-│  ❌ Cannot use: DOM elements, game entity logic                     │
-├────────────────────────────────────────────────────────────────────┤
-│  USE CASES  (src/use-cases/)                                        │
-│  The game logic layer — orchestrates what happens and when.         │
-│  Contains: GameLoop, PlayerController, ZombieSystem, CombatSystem.  │
-│  ✅ Can use: core entities, EventBus                                │
-│  ❌ Cannot use: Three.js, DOM, direct AI calls (use Factory)        │
-├────────────────────────────────────────────────────────────────────┤
-│  CORE / DOMAIN  (src/core/)                                         │
-│  The heart of the game — pure data and pure math.                   │
-│  Contains: Player, Zombie, Maze, Weapon, EventBus, math utilities.  │
-│  ✅ Can use: vanilla JavaScript only                                │
-│  ❌ Cannot use: ANYTHING external — not even npm packages           │
-└────────────────────────────────────────────────────────────────────┘
-```
+| Layer | Path | Description | ✅ Can use | ❌ Cannot use |
+|---|---|---|---|---|
+| **PRESENTATION** | `src/presentation/` | The user interface layer — HTML overlays and DOM updates only. Reads events from the EventBus and updates the HUD, menus, etc. | DOM, HTML, CSS, browser events | Three.js, game logic |
+| **INFRASTRUCTURE** | `src/infrastructure/` | The "adapter" layer — glues the game to external technologies. Contains: Three.js rendering, Gemini API calls, audio system. | Three.js, fetch, Web Audio API, external SDKs | DOM elements, game entity logic |
+| **USE CASES** | `src/use-cases/` | The game logic layer — orchestrates what happens and when. Contains: GameLoop, PlayerController, ZombieSystem, CombatSystem. | core entities, EventBus | Three.js, DOM, direct AI calls (use Factory) |
+| **CORE / DOMAIN** | `src/core/` | The heart of the game — pure data and pure math. Contains: Player, Zombie, Maze, Weapon, EventBus, math utilities. | vanilla JavaScript only | ANYTHING external — not even npm packages |
 
 ### The golden rule: dependencies always flow **inward**
 
@@ -371,12 +324,10 @@ Instead of hardcoding personality and rules directly in JavaScript strings (whic
 
 ### Token optimisation
 
-| Setting | Value | Reason |
-|---|---|---|
-| Model | `gemini-2.0-flash-lite` | Cheapest & fastest Gemini tier |
-| `maxOutputTokens` | `128` | JSON state fits in < 60 tokens; hard cap prevents runaway |
-| `temperature` | `0` | Deterministic — no sampling overhead, no retries needed |
-| `thinkingBudget` | `0` | Suppresses hidden Chain-of-Thought tokens (saves cost) |
+- **Model:** `gemini-2.0-flash-lite` — Cheapest & fastest Gemini tier
+- **`maxOutputTokens`:** `128` — JSON state fits in < 60 tokens; hard cap prevents runaway
+- **`temperature`:** `0` — Deterministic, no sampling overhead, no retries needed
+- **`thinkingBudget`:** `0` — Suppresses hidden Chain-of-Thought tokens (saves cost)
 
 ### Graceful fallback
 
@@ -568,15 +519,13 @@ In `main.js`, register `MyNpcSystem` with the `GameLoop` and add a listener in `
 
 These rules are enforced by `CLAUDE.md` and `.ai-architecture.md`. Any AI coding agent (Antigravity, Cursor, Copilot) working on this project must follow them.
 
-| Rule | Detail |
-|---|---|
-| 🚫 No Three.js outside `src/infrastructure/three/` | Ever. Any Three.js import outside this folder breaks the architecture. |
-| 🚫 No DOM APIs outside `src/presentation/` | Use EventBus to communicate DOM changes instead. |
-| 🚫 No hardcoded system prompts in `.js` | Always load via `ContextLoader` from `skills/` and `knowledge/`. |
-| 🚫 No direct model instantiation | Always use `AIModelFactory.create(AIProvider.GEMINI)`. |
-| 🚫 No LLM calls outside `try/catch` | The render loop must **never** freeze. All AI calls are async with graceful fallback. |
-| ✅ JSDoc on every function parameter | No untyped parameters. Enforced across all files. |
-| ✅ `.env` stays in `.gitignore` | No API keys, ever, in source code or Git history. |
+- 🚫 **No Three.js outside `src/infrastructure/three/`** — Any Three.js import outside this folder breaks the architecture.
+- 🚫 **No DOM APIs outside `src/presentation/`** — Use EventBus to communicate DOM changes instead.
+- 🚫 **No hardcoded system prompts in `.js`** — Always load via `ContextLoader` from `skills/` and `knowledge/`.
+- 🚫 **No direct model instantiation** — Always use `AIModelFactory.create(AIProvider.GEMINI)`.
+- 🚫 **No LLM calls outside `try/catch`** — The render loop must **never** freeze. All AI calls are async with graceful fallback.
+- ✅ **JSDoc on every function parameter** — No untyped parameters. Enforced across all files.
+- ✅ **`.env` stays in `.gitignore`** — No API keys, ever, in source code or Git history.
 
 ### Pre-commit checklist
 
@@ -595,11 +544,9 @@ The game is set in **Z-Maze Shooting**, a medieval kingdom crumbling after the d
 
 ### Factions
 
-| Faction | Role |
-|---|---|
-| **Guardianes de la Luz** | Paladins protecting the main village from undead |
-| **Los Renegados** | Bandits that ambush in dark forest corridors |
-| **Los Antiguos** | Neutral magic beings that grant legendary quests |
+- **Guardianes de la Luz** — Paladins protecting the main village from undead
+- **Los Renegados** — Bandits that ambush in dark forest corridors
+- **Los Antiguos** — Neutral magic beings that grant legendary quests
 
 ### World rules (enforced in NPC AI prompts)
 - All NPCs refer to the player as **"Viajero/Viajera"** (Traveler).
@@ -611,15 +558,13 @@ The game is set in **Z-Maze Shooting**, a medieval kingdom crumbling after the d
 
 ## 📚 Further Reading
 
-| File | Purpose |
-|---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Strict rules for AI coding agents working on this repo |
-| [`.ai-architecture.md`](.ai-architecture.md) | Machine-readable architecture contract with layer diagram |
-| [`src/infrastructure/ai/ModelFactory.js`](src/infrastructure/ai/ModelFactory.js) | Gemini adapter + token optimisation config |
-| [`src/infrastructure/ai/ContextLoader.js`](src/infrastructure/ai/ContextLoader.js) | RAG context assembly logic |
-| [`src/use-cases/ZombieSystem.js`](src/use-cases/ZombieSystem.js) | Full zombie AI + A* pathfinding system |
-| [`src/core/math/AStar.js`](src/core/math/AStar.js) | A* pathfinding implementation |
-| [`skills/zombie-behavior.md`](skills/zombie-behavior.md) | Zombie NPC system prompt + JSON schema |
-| [`knowledge/game-lore.md`](knowledge/game-lore.md) | World lore injected into every NPC context |
+- [`CLAUDE.md`](CLAUDE.md) — Strict rules for AI coding agents working on this repo
+- [`.ai-architecture.md`](.ai-architecture.md) — Machine-readable architecture contract with layer diagram
+- [`src/infrastructure/ai/ModelFactory.js`](src/infrastructure/ai/ModelFactory.js) — Gemini adapter + token optimisation config
+- [`src/infrastructure/ai/ContextLoader.js`](src/infrastructure/ai/ContextLoader.js) — RAG context assembly logic
+- [`src/use-cases/ZombieSystem.js`](src/use-cases/ZombieSystem.js) — Full zombie AI + A* pathfinding system
+- [`src/core/math/AStar.js`](src/core/math/AStar.js) — A* pathfinding implementation
+- [`skills/zombie-behavior.md`](skills/zombie-behavior.md) — Zombie NPC system prompt + JSON schema
+- [`knowledge/game-lore.md`](knowledge/game-lore.md) — World lore injected into every NPC context
 
 ---
