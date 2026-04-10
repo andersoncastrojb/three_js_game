@@ -623,5 +623,3 @@ The game is set in **Z-Maze Shooting**, a medieval kingdom crumbling after the d
 | [`knowledge/game-lore.md`](knowledge/game-lore.md) | World lore injected into every NPC context |
 
 ---
-
-*Built with ❤️ using Three.js, Vite, and Google Gemini.*
