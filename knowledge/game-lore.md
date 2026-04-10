@@ -1,8 +1,8 @@
 # Leyenda y Mundo del Juego
 
-## El Reino de Aethelgard
+## El Reino de Z-Maze Shooting
 
-El juego se desarrolla en Aethelgard, un reino asediado por las sombras después de la caída del Rey Caído. 
+El juego se desarrolla en Z-Maze Shooting, un reino asediado por las sombras después de la caída del Rey Caído. 
 Los jugadores comienzan en la "Aldea del Inicio", un pequeño campamento de refugiados.
 
 ### Facciones
