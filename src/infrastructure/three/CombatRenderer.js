@@ -16,14 +16,14 @@ export class CombatRenderer {
   constructor(scene, camera) {
     this.scene = scene;
     this.camera = camera;
-    
+
     /** @type {Map<string, THREE.Mesh>} */
     this.projectiles = new Map();
-    
+
     /** @type {THREE.Group} */
     this.bloodParticles = new THREE.Group();
     this.scene.add(this.bloodParticles);
-    
+
     this._loadGunModel();
     this._createPlayerMarker();
     this._setupListeners();
@@ -34,7 +34,7 @@ export class CombatRenderer {
     eventBus.on(CombatEvents.PROJECTILE_MOVED, (payload) => this._onProjectileMoved(payload));
     eventBus.on(CombatEvents.PROJECTILE_DESTROYED, (payload) => this._onProjectileDestroyed(payload));
     eventBus.on(ZombieEvents.DAMAGED, (payload) => this._onZombieDamaged(payload));
-    
+
     eventBus.on(PlayerEvents.MOVED, (payload) => this._onPlayerMoved(payload));
     eventBus.on(PlayerEvents.SCAN_CHANGED, (payload) => this._onPlayerScanChanged(payload));
   }
@@ -43,7 +43,7 @@ export class CombatRenderer {
   _createPlayerMarker() {
     this.playerMarker = new THREE.Group();
     // Remove depthTest: false to render naturally, preventing weird overlaps
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); 
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 
     // Head (Cone)
     const headGeo = new THREE.ConeGeometry(0.8, 1.6, 16);
@@ -59,7 +59,7 @@ export class CombatRenderer {
 
     this.playerMarker.add(head);
     this.playerMarker.add(shaft);
-    
+
     this.playerMarker.visible = false; // Only visible during scan
     this.scene.add(this.playerMarker);
   }
@@ -89,8 +89,18 @@ export class CombatRenderer {
    * @param {import('../../core/entities/Player.js').PlayerSnapshot} payload 
    */
   _onPlayerScanChanged(payload) {
+    const hideCombat = payload.isScanning;
+
     if (this.playerMarker) {
-      this.playerMarker.visible = payload.isScanning;
+      this.playerMarker.visible = hideCombat;
+    }
+
+    if (this.gunModel) {
+      this.gunModel.visible = !hideCombat;
+    }
+
+    for (const mesh of this.projectiles.values()) {
+      mesh.visible = !hideCombat;
     }
   }
 
@@ -100,19 +110,19 @@ export class CombatRenderer {
   _loadGunModel() {
     const loader = new GLTFLoader();
     // Path is speculative, should be adjusted based on actual asset location
-    const modelPath = '/assets/models/gun.glb'; 
-    
+    const modelPath = '/assets/models/gun.glb';
+
     loader.load(
       modelPath,
       (gltf) => {
         this.gunModel = gltf.scene;
         this.gunModel.scale.set(0.5, 0.5, 0.5);
-        
+
         // Attach to camera for first-person view
         // Positioning it at the bottom right of the screen
         this.gunModel.position.set(0.5, -0.4, -0.8);
         this.gunModel.rotation.y = Math.PI;
-        
+
         this.camera.add(this.gunModel);
         console.log('[CombatRenderer] Gun model loaded');
       },
@@ -141,7 +151,7 @@ export class CombatRenderer {
     const geo = new THREE.SphereGeometry(0.05, 8, 8);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
     const mesh = new THREE.Mesh(geo, mat);
-    
+
     mesh.position.set(position.x, position.y, position.z);
     this.scene.add(mesh);
     this.projectiles.set(projectileId, mesh);
@@ -194,7 +204,7 @@ export class CombatRenderer {
       positions[i * 3] = pos.x;
       positions[i * 3 + 1] = pos.y;
       positions[i * 3 + 2] = pos.z;
-      
+
       velocities.push({
         x: (Math.random() - 0.5) * 2,
         y: (Math.random() - 0.5) * 2,
@@ -205,7 +215,7 @@ export class CombatRenderer {
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({ color: 0xaa0000, size: 0.1 });
     const points = new THREE.Points(geo, mat);
-    
+
     this.bloodParticles.add(points);
 
     // Simple animation for particles

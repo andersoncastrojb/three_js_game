@@ -120,13 +120,24 @@ export class PlayerHUD {
     // Player state changes
     this.#unsubs.push(
       eventBus.on(PlayerEvents.HEALTH_CHANGED, (s) => this.#updateHealth(s)),
-      eventBus.on(PlayerEvents.AMMO_CHANGED,   (s) => this.#updateAmmo(s)),
-      eventBus.on(PlayerEvents.SCAN_CHANGED,   (s) => this.#updateScans(s)),
-      eventBus.on(PlayerEvents.SPAWNED,        (s) => this.#syncAll(s)),
-      eventBus.on(PlayerEvents.DIED,           ()  => this.#flashDamage(true)),
+      eventBus.on(PlayerEvents.AMMO_CHANGED, (s) => this.#updateAmmo(s)),
+      eventBus.on(PlayerEvents.SCAN_CHANGED, (s) => {
+        this.#updateScans(s);
+        const display = s.isScanning ? 'none' : 'flex';
+        const statsBar = document.getElementById('player-stats-bar');
+        if (statsBar) statsBar.style.display = display;
+
+        const crosshair = document.getElementById('crosshair');
+        if (crosshair) crosshair.style.display = s.isScanning ? 'none' : 'block';
+
+        const reload = document.getElementById('reload-indicator');
+        if (reload) reload.style.display = display;
+      }),
+      eventBus.on(PlayerEvents.SPAWNED, (s) => this.#syncAll(s)),
+      eventBus.on(PlayerEvents.DIED, () => this.#flashDamage(true)),
 
       // Reload UI
-      eventBus.on(PlayerEvents.RELOAD_START,  () => {
+      eventBus.on(PlayerEvents.RELOAD_START, () => {
         document.getElementById('reload-indicator').classList.remove('hidden');
       }),
       eventBus.on(PlayerEvents.RELOAD_FINISH, (s) => {
@@ -147,11 +158,11 @@ export class PlayerHUD {
       // End states
       eventBus.on(PlayerEvents.DIED, (s) => {
         if (s.lives <= 0) {
-           this.#showGameOver();
+          this.#showGameOver();
         }
       }),
       eventBus.on('level:changed', () => {
-         this.#showLevelComplete();
+        this.#showLevelComplete();
       })
     );
   }
@@ -184,9 +195,9 @@ export class PlayerHUD {
 
     // Colour shift: green → yellow → red
     const fill = document.getElementById('health-bar-fill');
-    if (pct > 60)      fill.dataset.level = 'high';
+    if (pct > 60) fill.dataset.level = 'high';
     else if (pct > 30) fill.dataset.level = 'mid';
-    else               fill.dataset.level = 'low';
+    else fill.dataset.level = 'low';
   }
 
   /**
@@ -194,7 +205,7 @@ export class PlayerHUD {
    */
   #updateAmmo(snap) {
     document.getElementById('ammo-current').textContent = snap.ammo;
-    document.getElementById('ammo-max').textContent     = snap.maxAmmo;
+    document.getElementById('ammo-max').textContent = snap.maxAmmo;
 
     const ammoEl = document.getElementById('ammo-current');
     ammoEl.classList.toggle('ammo-empty', snap.ammo === 0);
@@ -219,8 +230,8 @@ export class PlayerHUD {
    */
   #updateScans(snap) {
     document.getElementById('scans-current').textContent = snap.scans;
-    document.getElementById('scans-max').textContent     = snap.maxScans;
-    
+    document.getElementById('scans-max').textContent = snap.maxScans;
+
     const scansEl = document.getElementById('scans-current');
     scansEl.style.color = snap.scans > 0 ? '#00ddff' : '#ff1744';
   }
@@ -288,13 +299,13 @@ export class PlayerHUD {
       e.stopPropagation();
       nextLvl();
     });
-    
+
     // Add Enter key listener specifically for the win screen
     const enterListener = (e) => {
-       if (e.key === 'Enter') {
-          window.removeEventListener('keydown', enterListener);
-          nextLvl();
-       }
+      if (e.key === 'Enter') {
+        window.removeEventListener('keydown', enterListener);
+        nextLvl();
+      }
     };
     window.addEventListener('keydown', enterListener);
   }

@@ -5,7 +5,7 @@
  * domain state changes in the UI. No Three.js dependency.
  */
 
-import { eventBus } from '../core/EventBus.js';
+import { eventBus, PlayerEvents } from '../core/EventBus.js';
 import { AgentEvents } from '../use-cases/AgentBehavior.js';
 import { GameLoopEvents } from '../use-cases/GameLoop.js';
 
@@ -62,9 +62,13 @@ export class HUD {
       el.textContent = Math.max(0, parseInt(el.textContent) - 1);
     });
 
+    eventBus.on(PlayerEvents.SCAN_CHANGED, ({ isScanning }) => {
+      this.#root.style.display = isScanning ? 'none' : 'flex';
+    });
+
     eventBus.on(AgentEvents.SKILL_RESULT, ({ skillResult }) => {
       const panel = document.getElementById('hud-skill');
-      const val   = document.getElementById('hud-skill-value');
+      const val = document.getElementById('hud-skill-value');
       panel.style.display = 'flex';
       val.textContent = skillResult.success
         ? `✓ ${skillResult.skillName}`
